@@ -68,3 +68,14 @@ def decode_boundaries_from_velocities(velocities: Tensor, threshold: float = 0.2
     distances = (distances - d_min) / (d_max - d_min + 1e-8)
     boundaries = find_local_minima(distances, threshold=threshold, radius=radius)  # [..., T]
     return boundaries
+
+
+def decode_quantized_boundaries(boundaries: Tensor):
+    """
+    Decode quantized boundary indicators from blurred boundary probabilities.
+    :param boundaries: float [..., T], boundary probabilities, should be in [0, 1]
+    :return: bool [..., T], 1 = boundary, 0 = non-boundary
+    """
+    boundaries_step = boundaries.cumsum(dim=-1).round().long()
+    boundaries_diff = boundaries_step[..., 1:] > boundaries_step[..., :-1]
+    return F.pad(boundaries_diff, (1, 0), mode="constant", value=1)

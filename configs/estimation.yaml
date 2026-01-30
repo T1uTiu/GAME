@@ -37,7 +37,7 @@ model:
       num_heads: 8
       head_dim: 64
       c_kernel_size: 7
-      m_kernel_size: 7
+      m_kernel_size: 3
       ffn_type: 'glu' # 'glu', 'ffn', 'cgmlp'
       ffn_latent_drop: 0.0
       ffn_out_drop: 0.1

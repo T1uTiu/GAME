@@ -300,7 +300,7 @@ class EBFBackbone(nn.Module):
             self, in_dim: int, out_dim: int, return_latent: bool,
             dim: int = 256,
             num_layers: int = 8,
-            latent_layer_idx: int = 6,
+            latent_layer_idx: int = None,
             latent_out_dim: int = 16,
             num_heads: int = 8,
             head_dim: int = 64,

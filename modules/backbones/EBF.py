@@ -316,10 +316,10 @@ class EBFBackbone(nn.Module):
             ffn_type: str = 'glu',
             ffn_latent_drop: float = 0.1,
             ffn_out_drop: float = 0.1,
-            skip_out_norm_and_proj: bool = False,
+            use_out_norm: bool = True,
     ):
         super().__init__()
-        self.skip_out_norm_and_proj = skip_out_norm_and_proj
+        self.use_out_norm = use_out_norm
         self.return_latent = return_latent
         if return_latent:
             assert latent_layer_idx <= num_layers
@@ -341,9 +341,9 @@ class EBFBackbone(nn.Module):
         if self.return_latent:
             self.latent_norm = RMSnorm(dim)
             self.latent_proj = nn.Linear(dim, latent_out_dim)  # -> [B, T, C_latent]
-        if not self.skip_out_norm_and_proj:
+        if self.use_out_norm:
             self.output_norm = RMSnorm(dim)
-            self.output_proj = nn.Linear(dim, out_dim)  # -> [B, T, C_out]
+        self.output_proj = nn.Linear(dim, out_dim)  # -> [B, T, C_out]
 
     def forward(self, x, mask=None):
         """
@@ -363,11 +363,9 @@ class EBFBackbone(nn.Module):
                 latent = self.latent_norm(x)
                 latent = self.latent_proj(latent)  # [B, T, C_latent]
 
-        if not self.skip_out_norm_and_proj:
+        if self.use_out_norm:
             x = self.output_norm(x)
-            out = self.output_proj(x)  # [B, T, C_out]
-        else:
-            out = x
+        out = self.output_proj(x)  # [B, T, C_out]
 
         if self.return_latent:
             return out, latent

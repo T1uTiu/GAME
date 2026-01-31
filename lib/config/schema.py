@@ -102,6 +102,9 @@ class ModelConfig(ConfigBaseModel):
     midi_num_bins: int = Field(256, ge=2, json_schema_extra={
         "scope": ConfigurationScope.ESTIMATION
     })
+    use_glu: bool = Field(False, json_schema_extra={
+        "scope": ConfigurationScope.ESTIMATION
+    })
     segmenter: BackboneConfig = Field(None, json_schema_extra={
         "scope": ConfigurationScope.SEGMENTATION,
         "dynamic_check": RequiredOnGivenScope(ConfigurationScope.SEGMENTATION),

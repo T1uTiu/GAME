@@ -3,7 +3,7 @@ from torch import nn
 from lib.config.schema import ModelConfig
 from lib.reflection import build_object_from_class_name
 from modules.commons.common_layers import CyclicRegionEmbedding, LocalDownsample
-
+import torch.nn.functional as F
 
 class SegmentationModel(nn.Module):
     def __init__(self, config: ModelConfig):
@@ -47,13 +47,19 @@ class EstimationModel(nn.Module):
         self.downsample = LocalDownsample()
         self.estimator = build_object_from_class_name(
             config.estimator.cls, nn.Module,
-            config.embedding_dim, config.midi_num_bins, False,
+            config.estimator_input_dim, config.midi_num_bins, False,
             **config.estimator.kwargs
         )
+        self.use_adaptor_glu_out = config.use_adaptor_glu_out
+        if self.use_adaptor_glu_out:
+            self.adaptor_glu_out = nn.Linear(config.adaptor_out_dim, config.estimator_input_dim*2)
 
     def forward(self, spectrogram, regions, max_n: int, t_mask=None, n_mask=None, sigmoid=True):
         x = self.spectrogram_projection(spectrogram) + self.region_embedding(regions)
         x, latent = self.adaptor(x, mask=t_mask)
+        if self.use_adaptor_glu_out:
+            x = self.adaptor_glu_out(x)
+            x=F.glu(x, dim=-1)
         x_down = self.downsample(x, regions, max_n=max_n)
         logits = self.estimator(x_down, mask=n_mask)
         if sigmoid:

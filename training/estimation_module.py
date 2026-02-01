@@ -23,8 +23,7 @@ from training.data import BaseDataset
 from training.pl_module_base import BaseLightningModule
 
 NOTE_DECODING_THRESHOLD = 0.2
-NOTE_ACCURACY_TOLERANCE = 0.5
-CALIPER_PERIODS = [48.0, 24.0, 12.0, 4.0, 1.0]
+NOTE_ACCURACY_TOLERANCES = [0.5, 0.2, 0.1]
 
 
 class EstimationDataset(BaseDataset):
@@ -58,12 +57,13 @@ class EstimationLightningModule(BaseLightningModule):
         ))
         self.register_metric("presence_metric_collection", NotePresenceMetricCollection())
         self.register_metric("raw_pitch_rmse", RawPitchRMSE())
-        self.register_metric("raw_pitch_accuracy", RawPitchAccuracy(
-            tolerance=NOTE_ACCURACY_TOLERANCE,
-        ))
-        self.register_metric("overall_accuracy", OverallAccuracy(
-            tolerance=NOTE_ACCURACY_TOLERANCE,
-        ))
+        for tol in NOTE_ACCURACY_TOLERANCES:
+            self.register_metric(f"raw_pitch_accuracy_{100 * tol:.0f}cents", RawPitchAccuracy(
+                tolerance=tol,
+            ))
+            self.register_metric(f"overall_accuracy_{100 * tol:.0f}cents", OverallAccuracy(
+                tolerance=tol,
+            ))
 
     def forward_model(self, sample: dict[str, torch.Tensor], infer: bool) -> dict[str, torch.Tensor]:
         spectrogram = sample["spectrogram"]
@@ -77,6 +77,7 @@ class EstimationLightningModule(BaseLightningModule):
 
         min_val = self.training_config.loss.note_loss.midi_min
         max_val = self.training_config.loss.note_loss.midi_max
+        num_dials = len(self.training_config.loss.note_loss.dial_periods)
 
         estimations, latent = self.model(
             spectrogram, regions=regions, max_n=max_n,
@@ -84,7 +85,7 @@ class EstimationLightningModule(BaseLightningModule):
         )  # [B, N, C_out]
         presence_logits = estimations[:, :, 0]  # [B, N]
         beam_norm_pred = estimations[:, :, 1]  # [B, N]
-        dials_pred = estimations[:, :, 2:].reshape(-1, max_n, len(CALIPER_PERIODS), 2)  # [B, N, num_periods, 2]
+        dials_pred = estimations[:, :, 2:].reshape(-1, max_n, num_dials, 2)  # [B, N, num_dials, 2]
 
         if infer:
             presence_pred = presence_logits.sigmoid() >= NOTE_DECODING_THRESHOLD
@@ -103,16 +104,17 @@ class EstimationLightningModule(BaseLightningModule):
                 target_scores=scores, target_presence=presence,
                 weights=weights, mask=n_mask,
             )
-            self.metrics["raw_pitch_accuracy"].update(
-                pred_scores=scores_pred,
-                target_scores=scores, target_presence=presence,
-                weights=weights, mask=n_mask,
-            )
-            self.metrics["overall_accuracy"].update(
-                pred_scores=scores_pred, pred_presence=presence_pred,
-                target_scores=scores, target_presence=presence,
-                weights=weights, mask=n_mask,
-            )
+            for tol in NOTE_ACCURACY_TOLERANCES:
+                self.metrics[f"raw_pitch_accuracy_{100 * tol:.0f}cents"].update(
+                    pred_scores=scores_pred,
+                    target_scores=scores, target_presence=presence,
+                    weights=weights, mask=n_mask,
+                )
+                self.metrics[f"overall_accuracy_{100 * tol:.0f}cents"].update(
+                    pred_scores=scores_pred, pred_presence=presence_pred,
+                    target_scores=scores, target_presence=presence,
+                    weights=weights, mask=n_mask,
+                )
             return {
                 "scores": scores_pred,
                 "presence": presence_pred,

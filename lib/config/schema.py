@@ -284,9 +284,29 @@ class TrainerConfig(ConfigBaseModel):
 
 
 class ValidationConfig(ConfigBaseModel):
-    spec_vmin: float = Field(-14.0)
-    spec_vmax: float = Field(4.0)
     max_plots: int = Field(100, ge=0)
+    boundary_drop_probability: float = Field(0.8, gt=0, le=1, json_schema_extra={
+        "scope": ConfigurationScope.SEGMENTATION
+    })
+    boundary_decoding_threshold: float = Field(0.3, gt=0, le=1, json_schema_extra={
+        "scope": ConfigurationScope.SEGMENTATION
+    })
+    boundary_decoding_radius: int = Field(2, gt=0, json_schema_extra={
+        "scope": ConfigurationScope.SEGMENTATION
+    })
+    boundary_matching_tolerance: int = Field(5, ge=0, json_schema_extra={
+        "scope": ConfigurationScope.SEGMENTATION
+    })
+    note_presence_threshold: float = Field(0.2, gt=0, le=1, json_schema_extra={
+        "scope": ConfigurationScope.ESTIMATION
+    })
+    note_accuracy_tolerances: list[float] = Field([0.5], min_length=1, json_schema_extra={
+        "scope": ConfigurationScope.ESTIMATION,
+        "dynamic_check": DynamicCheck(
+            expr=min_(this()) > 0,
+            message="All note accuracy tolerances must be greater than 0."
+        )
+    })
 
 
 class FinetuningConfig(ConfigBaseModel):

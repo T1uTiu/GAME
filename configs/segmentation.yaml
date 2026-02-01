@@ -40,3 +40,8 @@ training:
       cutoff_radius: 40
       decay_power: 2.0
       decay_alpha: 0.5
+  validation:
+    boundary_drop_probability: 0.8
+    boundary_decoding_threshold: 0.3
+    boundary_decoding_radius: 2
+    boundary_matching_tolerance: 5

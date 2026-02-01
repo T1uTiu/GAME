@@ -22,9 +22,6 @@ from modules.midi_extraction import EstimationModel
 from training.data import BaseDataset
 from training.pl_module_base import BaseLightningModule
 
-NOTE_DECODING_THRESHOLD = 0.2
-NOTE_ACCURACY_TOLERANCES = [0.5, 0.2, 0.1]
-
 
 class EstimationDataset(BaseDataset):
     __non_zero_paddings__ = {
@@ -57,7 +54,7 @@ class EstimationLightningModule(BaseLightningModule):
         ))
         self.register_metric("presence_metric_collection", NotePresenceMetricCollection())
         self.register_metric("raw_pitch_rmse", RawPitchRMSE())
-        for tol in NOTE_ACCURACY_TOLERANCES:
+        for tol in self.training_config.validation.note_accuracy_tolerances:
             self.register_metric(f"raw_pitch_accuracy_{100 * tol:.0f}cents", RawPitchAccuracy(
                 tolerance=tol,
             ))
@@ -88,7 +85,7 @@ class EstimationLightningModule(BaseLightningModule):
         dials_pred = estimations[:, :, 2:].reshape(-1, max_n, num_dials, 2)  # [B, N, num_dials, 2]
 
         if infer:
-            presence_pred = presence_logits.sigmoid() >= NOTE_DECODING_THRESHOLD
+            presence_pred = presence_logits.sigmoid() >= self.training_config.validation.note_presence_threshold
             beam_pred = beam_norm_pred * (max_val - min_val) + min_val
             scores_pred = decode_cascaded_dial_pointers(
                 beam=beam_pred,
@@ -104,7 +101,7 @@ class EstimationLightningModule(BaseLightningModule):
                 target_scores=scores, target_presence=presence,
                 weights=weights, mask=n_mask,
             )
-            for tol in NOTE_ACCURACY_TOLERANCES:
+            for tol in self.training_config.validation.note_accuracy_tolerances:
                 self.metrics[f"raw_pitch_accuracy_{100 * tol:.0f}cents"].update(
                     pred_scores=scores_pred,
                     target_scores=scores, target_presence=presence,

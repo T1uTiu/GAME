@@ -24,11 +24,6 @@ from modules.midi_extraction import SegmentationModel
 from .data import BaseDataset
 from .pl_module_base import BaseLightningModule
 
-BOUNDARY_DROP_PROBABILITY = 0.8
-BOUNDARY_DECODING_THRESHOLD = 0.3
-BOUNDARY_DECODING_RADIUS = 2
-BOUNDARY_MATCHING_TOLERANCE = 5
-
 
 class SegmentationDataset(BaseDataset):
     pass
@@ -54,7 +49,7 @@ class SegmentationLightningModule(BaseLightningModule):
         ))
         self.register_metric("average_chamfer_distance", AverageChamferDistance())
         self.register_metric("quantity_metric_collection", QuantityMetricCollection(
-            tolerance=BOUNDARY_MATCHING_TOLERANCE
+            tolerance=self.training_config.validation.boundary_matching_tolerance
         ))
 
     def forward_model(self, sample: dict[str, torch.Tensor], infer: bool) -> dict[str, torch.Tensor]:
@@ -76,7 +71,7 @@ class SegmentationLightningModule(BaseLightningModule):
         if infer:
             superregions = mask.long()  # a whole region
         else:
-            superregions = merge_random_regions(regions, p=BOUNDARY_DROP_PROBABILITY)
+            superregions = merge_random_regions(regions, p=self.training_config.validation.boundary_drop_probability)
 
         velocities, latent = self.model(
             spectrogram, regions=superregions,
@@ -87,8 +82,8 @@ class SegmentationLightningModule(BaseLightningModule):
             similarities = self_cosine_similarity(latent)  # [B, T, T]
             boundaries_pred = decode_boundaries_from_velocities(
                 velocities, mask=mask,
-                threshold=BOUNDARY_DECODING_THRESHOLD,
-                radius=BOUNDARY_DECODING_RADIUS,
+                threshold=self.training_config.validation.note_decoding_threshold,
+                radius=self.training_config.validation.boundary_decoding_radius,
             )
             self.metrics["average_chamfer_distance"].update(boundaries_pred, boundaries)
             self.metrics["quantity_metric_collection"].update(boundaries_pred, boundaries)
@@ -119,7 +114,7 @@ class SegmentationLightningModule(BaseLightningModule):
             boundaries_pred = outputs["boundaries"][i, :T]  # [T]
 
             match_pred_to_target, match_target_to_pred = match_nearest_boundaries(
-                boundaries_pred, boundaries, tolerance=BOUNDARY_MATCHING_TOLERANCE
+                boundaries_pred, boundaries, tolerance=self.training_config.validation.boundary_matching_tolerance
             )
             boundaries_tp = match_pred_to_target
             boundaries_fp = boundaries_pred & ~match_pred_to_target
@@ -129,7 +124,9 @@ class SegmentationLightningModule(BaseLightningModule):
             distance_pred = velocities.cumsum(dim=0)
             d_min = distance_pred.min()
             d_max = distance_pred.max()
-            threshold_denorm = (BOUNDARY_DECODING_THRESHOLD * (d_max - d_min + 1e-8) + d_min).cpu().numpy().item()
+            threshold_denorm = (
+                    self.training_config.validation.note_presence_threshold * (d_max - d_min + 1e-8) + d_min
+            ).cpu().numpy().item()
 
             self.plot_regions(
                 data_idx, similarities, durations,

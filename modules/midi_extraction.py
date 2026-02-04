@@ -46,6 +46,11 @@ class SegmentationModel(nn.Module):
             config.embedding_dim,
             cycle_length=config.region_cycle_len
         )
+        self.time_embedding = nn.Sequential(
+            nn.Linear(1, config.embedding_dim * 4),
+            nn.GELU(),
+            nn.Linear(config.embedding_dim * 4, config.embedding_dim)
+        )
         self.use_language_embedding = config.use_languages
         if self.use_language_embedding:
             self.language_embedding = nn.Embedding(config.num_languages + 1, config.embedding_dim, padding_idx=0)
@@ -55,8 +60,9 @@ class SegmentationModel(nn.Module):
             **config.segmenter.kwargs
         )
 
-    def forward(self, spectrogram, regions, language=None, mask=None):
+    def forward(self, spectrogram, regions, t=None, language=None, mask=None):
         x = self.spectrogram_projection(spectrogram) + self.region_embedding(regions)
+        x = x + self.time_embedding(t[..., None, None])
         if self.use_language_embedding:
             x = x + self.language_embedding(language.unsqueeze(-1))
         x, latent = self.segmenter(x, mask=mask)

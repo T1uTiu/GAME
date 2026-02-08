@@ -45,12 +45,12 @@ def load_config_for_inference(path: pathlib.Path, scope: int = 0) -> tuple[Model
 
 def load_state_dict_for_inference(path: pathlib.Path, ema=True) -> dict[str, Tensor]:
     checkpoint = torch.load(path, map_location="cpu")
-    if ema and "ema_state_dict" in checkpoint:
-        return checkpoint["ema_state_dict"]
-    elif "state_dict" in checkpoint:
-        return checkpoint["state_dict"]
-    else:
+    state_dict: dict = checkpoint.get("state_dict", {})
+    if ema and (ema_state_dict := checkpoint.get("ema_state_dict")) is not None:
+        state_dict.update(ema_state_dict)
+    if not state_dict:
         raise KeyError(f"No valid state dict found in checkpoint: {path}.")
+    return state_dict
 
 
 def load_segmentation_inference_model(path: pathlib.Path) -> tuple[SegmentationInferenceModel, dict[str, int] | None]:

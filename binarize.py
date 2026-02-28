@@ -5,32 +5,23 @@ import click
 from lib import logging
 
 
-def shared_options(func):
-    options = [
-        click.option(
-            "--config", type=click.Path(
-                exists=True, dir_okay=False, file_okay=True, readable=True, path_type=pathlib.Path
-            ),
-            required=True,
-            help="Path to the configuration file."
-        ),
-        click.option(
-            "--override", multiple=True,
-            type=click.STRING, required=False,
-            help="Override configuration values in dotlist format."
-        ),
-        click.option(
-            "--eval", "eval_mode", is_flag=True, default=False, show_default=True,
-            help="Evaluation mode: the whole dataset will be processed as validation set."
-        )
-    ]
-    for option in options[::-1]:
-        func = option(func)
-    return func
-
-
 @click.command(help="Binarize raw notes datasets.")
-@shared_options
+@click.option(
+    "--config", type=click.Path(
+        exists=True, dir_okay=False, file_okay=True, readable=True, path_type=pathlib.Path
+    ),
+    required=True,
+    help="Path to the configuration file."
+)
+@click.option(
+    "--override", multiple=True,
+    type=click.STRING, required=False,
+    help="Override configuration values in dotlist format."
+)
+@click.option(
+    "--eval", "eval_mode", is_flag=True, default=False, show_default=True,
+    help="Evaluation mode: the whole dataset will be processed as validation set."
+)
 def main(config: pathlib.Path, override: list[str], eval_mode: bool):
     import dask
     from preprocessing.api import (

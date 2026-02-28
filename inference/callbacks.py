@@ -1,5 +1,6 @@
 import abc
 import csv
+import json
 import pathlib
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -7,18 +8,24 @@ from typing import Any, Callable, Literal
 
 import librosa
 import lightning.pytorch.callbacks
+import matplotlib.pyplot as plt
 import mido
 import torch
 import torch.nn.functional as F
 
+from inference.me_infer_module import InferenceModule
 from lib import logging
 
 __all__ = [
-    "SaveFileCallback",
-    "SaveMidiCallback",
-    "SaveTextCallback",
+    "SaveCombinedFileCallback",
+    "SaveCombinedMidiFileCallback",
+    "SaveCombinedTextFileCallback",
     "UpdateDiffSingerTranscriptionsCallback",
+    "VisualizeNoteComparisonCallback",
+    "ExportMetricSummaryCallback",
 ]
+
+from lib.plot import note_to_figure
 
 
 @dataclass
@@ -28,7 +35,7 @@ class _NoteInfo:
     pitch: float
 
 
-class SaveFileCallback(lightning.pytorch.callbacks.Callback, abc.ABC):
+class SaveCombinedFileCallback(lightning.pytorch.callbacks.Callback, abc.ABC):
     def __init__(self, output_dir: str | pathlib.Path):
         super().__init__()
         if isinstance(output_dir, str):
@@ -106,7 +113,7 @@ class SaveFileCallback(lightning.pytorch.callbacks.Callback, abc.ABC):
         pass
 
 
-class SaveMidiCallback(SaveFileCallback):
+class SaveCombinedMidiFileCallback(SaveCombinedFileCallback):
     def __init__(
             self, output_dir: str | pathlib.Path,
             tempo: int = 120,
@@ -141,7 +148,7 @@ class SaveMidiCallback(SaveFileCallback):
         logging.info(f"Saved MIDI file: {filepath.as_posix()}", callback=logger_fn)
 
 
-class SaveTextCallback(SaveFileCallback):
+class SaveCombinedTextFileCallback(SaveCombinedFileCallback):
     def __init__(
             self, output_dir: str | pathlib.Path,
             file_format: Literal["txt", "csv"] = "csv",
@@ -274,3 +281,74 @@ class UpdateDiffSingerTranscriptionsCallback(lightning.pytorch.callbacks.Callbac
         del self.lengths[key]
         del self.counters[key]
         logging.info(f"Saved transcriptions: {save_path.as_posix()}", callback=logger_fn)
+
+
+class VisualizeNoteComparisonCallback(lightning.pytorch.callbacks.Callback):
+    def __init__(self, save_dir: str | pathlib.Path, digits: int = None):
+        super().__init__()
+        if isinstance(save_dir, str):
+            save_dir = pathlib.Path(save_dir)
+        self.save_dir = save_dir
+        self.digits = digits
+
+    def on_test_batch_end(
+            self,
+            trainer: lightning.pytorch.Trainer,
+            pl_module: lightning.pytorch.LightningModule,
+            outputs: dict[str, torch.Tensor],
+            batch: dict[str, Any],
+            *args, **kwargs
+    ) -> None:
+        for i in range(len(batch["indices"])):
+            idx = batch["indices"][i].item()
+            title = batch["name"][i]
+            N = batch["N"][i].item()
+            scores_gt = batch["scores"][i, :N]
+            presence_gt = batch["presence"][i, :N]
+            durations_gt = batch["durations"][i, :N]
+            N_pred = outputs["N"][i].item()
+            scores_pred = outputs["scores"][i, :N_pred]
+            presence_pred = outputs["presence"][i, :N_pred]
+            durations_pred = outputs["durations_frame"][i, :N_pred]
+
+            fig = note_to_figure(
+                note_midi_gt=scores_gt.cpu().numpy(),
+                note_rest_gt=(~presence_gt).cpu().numpy(),
+                note_dur_gt=durations_gt.cpu().numpy(),
+                note_midi_pred=scores_pred.cpu().numpy(),
+                note_rest_pred=(~presence_pred).cpu().numpy(),
+                note_dur_pred=durations_pred.cpu().numpy(),
+                title=title
+            )
+
+            name = str(idx)
+            if self.digits is not None:
+                name = name.zfill(self.digits)
+
+            save_path = self.save_dir / f"{name}.jpg"
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(save_path)
+            plt.close(fig)
+
+
+class ExportMetricSummaryCallback(lightning.pytorch.callbacks.Callback):
+    def __init__(self, save_path: str | pathlib.Path):
+        super().__init__()
+        if isinstance(save_path, str):
+            save_path = pathlib.Path(save_path)
+        self.save_path = save_path
+
+    def on_test_end(
+            self,
+            trainer: lightning.pytorch.Trainer,
+            pl_module: InferenceModule,
+            *args, **kwargs
+    ) -> None:
+        summary = pl_module.summary
+        self.save_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.save_path.open(encoding="utf8", mode="w") as f:
+            json.dump(summary, f, indent=4)
+        logging.info(
+            f"Saved metric summary: {self.save_path.as_posix()}",
+            callback=trainer.progress_bar_callback.print
+        )

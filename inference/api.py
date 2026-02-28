@@ -10,7 +10,7 @@ from torch import Tensor
 from lib import logging
 from lib.config.core import ConfigBaseModel
 from lib.config.formatter import ModelFormatter
-from lib.config.schema import ModelConfig, InferenceConfig
+from lib.config.schema import ModelConfig, InferenceConfig, ValidationConfig
 from .me_infer_module import InferenceModule
 from .me_infer import SegmentationEstimationInferenceModel
 
@@ -28,7 +28,10 @@ def _log_config(cfg: ConfigBaseModel):
     print(formatter.format(cfg))
 
 
-def load_config_for_inference(path: pathlib.Path, scope: int = 0) -> tuple[ModelConfig, InferenceConfig]:
+def load_config_for_inference(
+        path: pathlib.Path,
+        scope: int = 0
+) -> tuple[ModelConfig, InferenceConfig]:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
     with open(path, "r", encoding="utf8") as f:
@@ -87,12 +90,15 @@ def infer_model(
         segmentation_d3pm_ts: list[float] = None,
         estimation_threshold: float = 0.2,
 ):
+    # noinspection PyArgumentList
     module = InferenceModule(
         model=model,
-        segmentation_threshold=segmentation_threshold,
-        segmentation_radius=segmentation_radius,
-        segmentation_d3pm_ts=segmentation_d3pm_ts,
-        estimation_threshold=estimation_threshold,
+        config=ValidationConfig(
+            d3pm_sample_ts=segmentation_d3pm_ts,
+            boundary_decoding_threshold=segmentation_threshold,
+            boundary_decoding_radius=round(segmentation_radius / model.timestep),
+            note_presence_threshold=estimation_threshold,
+        ),
     )
     trainer = lightning.pytorch.Trainer(
         logger=False,

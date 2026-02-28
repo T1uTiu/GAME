@@ -186,6 +186,7 @@ class BaseDataset(torch.utils.data.Dataset):
             sample["spectrogram"] = spectrogram
         return {
             "_idx": index,
+            "_name": self.info["item_paths"][index],
             "_augmentation": augmentation,
             **sample
         }
@@ -206,6 +207,7 @@ class BaseDataset(torch.utils.data.Dataset):
         batch = {
             "size": len(samples),
             "indices": torch.LongTensor([s.pop("_idx") for s in samples]),
+            "names": [s.pop("_name") for s in samples],
         }
         if len(samples) == 0:
             return batch

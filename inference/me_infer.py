@@ -77,32 +77,31 @@ class SegmentationEstimationInferenceModel(nn.Module):
         scores = scores * presence.float()
         return presence, scores
 
+    def forward_encoder_main(
+            self, spectrogram: Tensor, mask: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        x_seg, x_est = self.model.forward_encoder(spectrogram, mask=mask)
+        return x_seg, x_est
+
     def forward_encoder(
             self, waveform: Tensor, duration: Tensor,
-    ) -> Tensor:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         spectrogram = self.to_spectrogram(waveform).mT  # [B, T, C]
         T = spectrogram.size(1)
         L = duration.div(self.timestep).round().long()  # [B]
         idx = torch.arange(T, dtype=torch.long, device=duration.device)  # [T]
         mask = idx.unsqueeze(0) < L.unsqueeze(1)  # [B, T]
-        x_seg, x_est = self.model.forward_encoder(spectrogram, mask=mask)
+        x_seg, x_est = self.forward_encoder_main(spectrogram, mask=mask)
         return x_seg, x_est, mask
 
-    def forward_segmenter(
-            self, x_seg: Tensor, known_durations: Tensor, mask: Tensor,
-            threshold: Tensor, radius: Tensor,
-            language: Tensor = None, t: Tensor = None,
+    def forward_segmenter_main(
+            self, x_seg, known_boundaries, mask,
+            threshold, radius,
+            language=None, t=None,
     ):
-        T = x_seg.size(1)
-        known_boundaries = format_boundaries(
-            durations=known_durations, length=T, timestep=self.timestep
-        )  # [B, T]
-        known_boundaries = known_boundaries & mask
-        radius = (radius / self.timestep).round().long().clamp(min=1)
         B = x_seg.size(0)
-        Nt = t.size(0)
-
         if self.model_config.mode == "d3pm":
+            Nt = t.size(0)
             boundaries = known_boundaries
             for i in range(Nt):
                 ti = torch.full((B,), fill_value=t[i], device=x_seg.device)
@@ -131,13 +130,32 @@ class SegmentationEstimationInferenceModel(nn.Module):
         regions = boundaries_to_regions(boundaries, mask=mask)  # [B, T]
         max_n = regions.max()
 
+        return boundaries, regions, max_n
+
+    def forward_segmenter(
+            self, x_seg: Tensor, known_durations: Tensor, mask: Tensor,
+            threshold: Tensor, radius: Tensor,
+            language: Tensor = None, t: Tensor = None,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        T = x_seg.size(1)
+        known_boundaries = format_boundaries(
+            durations=known_durations, length=T, timestep=self.timestep
+        )  # [B, T]
+        known_boundaries = known_boundaries & mask
+
+        boundaries, regions, max_n = self.forward_segmenter_main(
+            x_seg, known_boundaries=known_boundaries, mask=mask,
+            language=language, t=t,
+            threshold=threshold, radius=radius,
+        )  # [B, T]
+
         durations = regions_to_durations(regions, max_n=max_n) * self.timestep  # [B, N]
         return durations, regions, max_n
 
     def forward_estimator(
             self, x_est: Tensor, regions: Tensor, mask: Tensor,
             max_n: int, threshold: Tensor,
-    ):
+    ) -> tuple[Tensor, Tensor]:
         idx = torch.arange(max_n, dtype=torch.long, device=regions.device).unsqueeze(0)  # [1, N]
         max_idx = regions.amax(dim=-1, keepdim=True)  # [B, 1]
         n_mask = idx < max_idx  # [B, N]
@@ -161,7 +179,7 @@ class SegmentationEstimationInferenceModel(nn.Module):
         :param waveform: float32 [batch_size, num_samples]
         :param known_durations: float32 [batch_size, num_known_regions]
         :param boundary_threshold: float32 scalar
-        :param boundary_radius: float32 scalar
+        :param boundary_radius: int64 scalar
         :param score_threshold: float32 scalar
         :param language: int64 [batch_size]
         :param t: float32 [num_steps]

@@ -301,7 +301,7 @@ def extract(
     )
     from inference.slicer2 import Slicer
     from inference.data import SlicedAudioFileIterableDataset
-    from inference.callbacks import SaveMidiCallback, SaveTextCallback
+    from inference.callbacks import SaveCombinedMidiFileCallback, SaveCombinedTextFileCallback
 
     model, lang_map = load_inference_model(model)
     language_id = _get_language_id(language, lang_map)
@@ -317,19 +317,19 @@ def extract(
     )
     callbacks = []
     if "mid" in output_formats:
-        callbacks.append(SaveMidiCallback(
+        callbacks.append(SaveCombinedMidiFileCallback(
             output_dir=output_dir,
             tempo=tempo,
         ))
     if "txt" in output_formats:
-        callbacks.append(SaveTextCallback(
+        callbacks.append(SaveCombinedTextFileCallback(
             output_dir=output_dir,
             file_format="txt",
             pitch_format=pitch_format,
             round_pitch=round_pitch,
         ))
     if "csv" in output_formats:
-        callbacks.append(SaveTextCallback(
+        callbacks.append(SaveCombinedTextFileCallback(
             output_dir=output_dir,
             file_format="csv",
             pitch_format=pitch_format,

@@ -839,6 +839,103 @@ class LocalAvgPoolTokens(nn.Module):
 
 
 # ============================================================
+# Pool Token Merger (for region_token_num > 1)
+# ============================================================
+
+class PoolTokenMerger(nn.Module):
+    """
+    Merge multiple pool tokens per region back to single token.
+    Input: [B, N*R, C] -> Output: [B, N, C]
+    
+    Modes:
+    - 'mean': average pooling across R tokens
+    - 'max': max pooling across R tokens
+    - 'first': take the first token only
+    - 'learned': learned weighted sum with softmax
+    - 'attention': self-attention to merge (query from first token)
+    """
+    def __init__(self, dim, region_token_num, mode='mean', num_heads=4):
+        super().__init__()
+        self.dim = dim
+        self.R = region_token_num
+        self.mode = mode
+        
+        if mode == 'learned':
+            # Learnable weights for each of the R tokens
+            self.merge_weights = nn.Parameter(torch.zeros(region_token_num))
+        elif mode == 'attention':
+            # Cross-attention: first token queries all R tokens
+            self.num_heads = num_heads
+            head_dim = dim // num_heads
+            self.q_proj = nn.Linear(dim, dim)
+            self.k_proj = nn.Linear(dim, dim)
+            self.v_proj = nn.Linear(dim, dim)
+            self.out_proj = nn.Linear(dim, dim)
+            self.scale = head_dim ** -0.5
+    
+    def forward(self, pool, n_mask):
+        """
+        Args:
+            pool: [B, N*R, C] pool tokens
+            n_mask: [B, N] valid mask for regions
+        Returns:
+            merged: [B, N, C] merged pool tokens
+        """
+        B, P, C = pool.shape
+        R = self.R
+        N = P // R
+        
+        # Reshape to [B, N, R, C]
+        pool = pool.reshape(B, N, R, C)
+        
+        if self.mode == 'mean':
+            merged = pool.mean(dim=2)  # [B, N, C]
+        
+        elif self.mode == 'max':
+            merged = pool.max(dim=2).values  # [B, N, C]
+        
+        elif self.mode == 'first':
+            merged = pool[:, :, 0, :]  # [B, N, C]
+        
+        elif self.mode == 'learned':
+            # Softmax over R dimension
+            weights = F.softmax(self.merge_weights, dim=0)  # [R]
+            weights = weights.view(1, 1, R, 1)  # [1, 1, R, 1]
+            merged = (pool * weights).sum(dim=2)  # [B, N, C]
+        
+        elif self.mode == 'attention':
+            # First token as query, all tokens as key/value
+            q = pool[:, :, 0:1, :]  # [B, N, 1, C]
+            k = pool  # [B, N, R, C]
+            v = pool  # [B, N, R, C]
+            
+            q = self.q_proj(q)  # [B, N, 1, C]
+            k = self.k_proj(k)  # [B, N, R, C]
+            v = self.v_proj(v)  # [B, N, R, C]
+            
+            # Reshape for multi-head attention
+            H = self.num_heads
+            D = C // H
+            q = q.reshape(B, N, 1, H, D).permute(0, 1, 3, 2, 4)  # [B, N, H, 1, D]
+            k = k.reshape(B, N, R, H, D).permute(0, 1, 3, 2, 4)  # [B, N, H, R, D]
+            v = v.reshape(B, N, R, H, D).permute(0, 1, 3, 2, 4)  # [B, N, H, R, D]
+            
+            # Attention
+            attn = (q @ k.transpose(-2, -1)) * self.scale  # [B, N, H, 1, R]
+            attn = F.softmax(attn, dim=-1)
+            out = attn @ v  # [B, N, H, 1, D]
+            out = out.squeeze(-2).reshape(B, N, C)  # [B, N, C]
+            merged = self.out_proj(out)
+        
+        else:
+            raise ValueError(f"Unknown merge mode: {self.mode}")
+        
+        # Apply n_mask
+        merged = merged * n_mask.unsqueeze(-1).float()
+        return merged
+
+
+# ============================================================
 # JEBFBackbone
 # ============================================================
 
@@ -890,6 +987,8 @@ class JEBFBackbone(nn.Module): #todo 其他的到时候再说
             use_region_bias: bool = False,
             bias_alpha: float = 2.35,
             bias_learnable: bool = False,
+            pool_merge_mode: str = 'mean',  # 'mean', 'max', 'first', 'learned', 'attention'
+            pool_merge_heads: int = 4,  # only for attention mode
     ):
         super().__init__()
         self.region_token_num = region_token_num
@@ -897,8 +996,15 @@ class JEBFBackbone(nn.Module): #todo 其他的到时候再说
         self.pool_out_dim = pool_out_dim if pool_out_dim is not None else out_dim
         self.attn_type = attn_type
         self.use_region_bias = use_region_bias
-        if use_region_bias :
+        if use_region_bias:
             self.region_bias = RegionBias(alpha=bias_alpha, learnable=bias_learnable)
+        
+        # Pool token merger (only when R > 1)
+        if region_token_num > 1:
+            self.pool_merger = PoolTokenMerger(dim, region_token_num, mode=pool_merge_mode, num_heads=pool_merge_heads)
+        else:
+            self.pool_merger = None
+        
         # Input projection
         self.input_proj = nn.Linear(in_dim, dim)
 
@@ -996,7 +1102,7 @@ class JEBFBackbone(nn.Module): #todo 其他的到时候再说
         
         Returns:
             out_x: [B, T, out_dim] output tensor
-            out_pool: [B, N*R, pool_out_dim] pooled output
+            out_pool: [B, N, pool_out_dim] pooled output (merged if R>1, else [B, N*R, pool_out_dim])
         """
         if max_n is None:
             max_n = n_mask.shape[1]
@@ -1039,7 +1145,11 @@ class JEBFBackbone(nn.Module): #todo 其他的到时候再说
             x = self.output_norm_x(x)
             pool = self.output_norm_pool(pool)
         
+        # Merge pool tokens if R > 1
+        if self.pool_merger is not None:
+            pool = self.pool_merger(pool, n_mask)  # [B, N*R, dim] -> [B, N, dim]
+        
         out_x = self.output_proj_x(x)  # [B, T, out_dim]
-        out_pool = self.output_proj_pool(pool)  # [B, P, pool_out_dim]
+        out_pool = self.output_proj_pool(pool)  # [B, N, pool_out_dim] (merged) or [B, N*R, pool_out_dim]
 
         return out_x, out_pool

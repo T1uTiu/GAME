@@ -219,8 +219,6 @@ By default, ONNX models are exported using opset version 20 (maximum supported v
 
 We don't provide implementation of ONNX model inference pipeline in this repository. However, you can read the [documentation](ONNX.md) about the workflow and structures, which may help you understand and implement it.
 
-<img src="assets/onnx-workflow.jpg" style="zoom: 50%;" />
-
 ## Integration
 
 For secondary development or downstream integration, this repository exposes essential APIs of all its stages. Please read the following code for details:

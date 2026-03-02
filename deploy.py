@@ -20,7 +20,7 @@ import click
 )
 @click.option(
     "--opset-version", type=click.IntRange(min=17),
-    default=24, show_default=True,
+    default=20, show_default=True,
     help="ONNX opset version to use for export."
 )
 def main(

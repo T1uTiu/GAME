@@ -30,6 +30,15 @@ from lib import logging
     help="Path to the configuration file to read validation arguments from."
 )
 @click.option(
+    "--override", multiple=True,
+    type=click.STRING, required=False,
+    help=(
+            "Override configuration values in dotlist format. "
+            "This only affects keys under training.validation "
+            "and this prefix should not be included in the dotlist keys."
+    ),
+)
+@click.option(
     "-o", "--save-dir", type=click.Path(
         exists=False, dir_okay=True, file_okay=False, writable=True, path_type=pathlib.Path
     ),
@@ -54,6 +63,7 @@ def main(
         dataset: pathlib.Path,
         model: pathlib.Path,
         config: pathlib.Path,
+        override: list[str],
         save_dir: pathlib.Path,
         plot: bool,
         batch_size: int,
@@ -70,7 +80,7 @@ def main(
 
     @rank_zero_only
     def _check_file_and_config(file: pathlib.Path, cfg: ConfigBaseModel):
-        cfg_load = load_raw_config(file)
+        cfg_load = load_raw_config(file, inherit=False, overrides=None)
         if cfg_load != cfg.model_dump():
             raise RuntimeError(
                 f"Contents of '{file}' do not match the configuration. "
@@ -79,7 +89,7 @@ def main(
 
     model, _ = load_inference_model(model)
     _check_file_and_config(dataset / "feature.yaml", model.inference_config.features)
-    validation_config = load_config_for_evaluation(config)
+    validation_config = load_config_for_evaluation(config, overrides=override)
 
     dataset = MIDIExtractionDataset(
         data_dir=dataset,

@@ -7,9 +7,9 @@ from dataclasses import dataclass
 import numpy
 import torch
 import tqdm
-import yaml
 
 from lib import logging
+from lib.config.io import save_raw_config
 from lib.config.schema import BinarizerConfig
 from lib.indexed_dataset import IndexedDatasetBuilder
 from lib.multiprocess import chunked_multiprocess_run
@@ -174,8 +174,7 @@ class BaseBinarizer(abc.ABC):
         # Copy description files
         with open(self.data_dir / "lang_map.json", "w", encoding="utf8") as f:
             json.dump(self.lang_map, f, ensure_ascii=False)
-        with open(self.data_dir / "feature.yaml", "w", encoding="utf8") as f:
-            yaml.safe_dump(self.config.features.model_dump(), f, allow_unicode=True, sort_keys=False)
+        save_raw_config(self.config.features.model_dump(), self.data_dir / "feature.yaml")
 
         # Process datasets
         if self.eval_mode:

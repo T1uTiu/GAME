@@ -32,7 +32,7 @@ def load_config_for_training(
         scope: int = 0,
         overrides: list[str] = None
 ) -> RootConfig:
-    config = load_raw_config(config_path, overrides)
+    config = load_raw_config(config_path, inherit=True, overrides=overrides)
     config = RootConfig.model_validate(config, scope=scope)
     config.resolve(scope_mask=scope)
     config.check(scope_mask=scope)
@@ -84,7 +84,7 @@ def train_model(
 
     @rank_zero_only
     def _check_file_and_config(file: pathlib.Path, cfg: ConfigBaseModel):
-        cfg_load = load_raw_config(file)
+        cfg_load = load_raw_config(file, inherit=False, overrides=None)
         if cfg_load != cfg.model_dump():
             raise RuntimeError(
                 f"Contents of '{file}' do not match the configuration. "

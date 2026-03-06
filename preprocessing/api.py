@@ -17,7 +17,7 @@ def load_config_for_binarization(
         scope: int = 0,
         overrides: list[str] = None
 ) -> BinarizerConfig:
-    config = load_raw_config(config_path, overrides)
+    config = load_raw_config(config_path, inherit=True, overrides=overrides)
     config = RootConfig.model_validate(config, scope=scope)
     config.resolve(scope_mask=scope)
     config.check(scope_mask=scope)

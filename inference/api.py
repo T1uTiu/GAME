@@ -4,16 +4,16 @@ from typing import Literal
 
 import lightning.pytorch.callbacks
 import torch
-import yaml
 from lightning_utilities.core.rank_zero import rank_zero_only, rank_zero_info
 from torch import Tensor
 
 from lib import logging
 from lib.config.core import ConfigBaseModel
 from lib.config.formatter import ModelFormatter
+from lib.config.io import load_raw_config
 from lib.config.schema import ModelConfig, InferenceConfig, ValidationConfig
-from .me_infer_module import InferenceModule
 from .me_infer import SegmentationEstimationInferenceModel
+from .me_infer_module import InferenceModule
 
 __all__ = [
     "load_config_for_inference",
@@ -36,8 +36,7 @@ def load_config_for_inference(
 ) -> tuple[ModelConfig, InferenceConfig]:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with open(path, "r", encoding="utf8") as f:
-        config = yaml.safe_load(f)
+    config = load_raw_config(path, inherit=False, overrides=None)
     model_config = ModelConfig.model_validate(config["model"], scope=scope)
     inference_config = InferenceConfig.model_validate(config["inference"], scope=scope)
     model_config.check(scope_mask=scope)
@@ -51,13 +50,18 @@ def load_config_for_inference(
 
 def load_config_for_evaluation(
         path: pathlib.Path,
-        scope: int = 0
+        scope: int = 0,
+        overrides: list[str] | None = None,
 ) -> ValidationConfig:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with open(path, "r", encoding="utf8") as f:
-        config = yaml.safe_load(f)
-    validation_config = ValidationConfig.model_validate(config["training"]["validation"], scope=scope)
+    if overrides:
+        overrides = [
+            f"training.validation.{override}"
+            for override in overrides
+        ]
+    config = load_raw_config(path, inherit=True, overrides=overrides, subkey="training.validation")
+    validation_config = ValidationConfig.model_validate(config, scope=scope)
     validation_config.check(scope_mask=scope)
 
     _log_config(validation_config)

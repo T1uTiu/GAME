@@ -148,7 +148,7 @@ class MIDIExtractionModule(BaseLightningModule):
                 "scores": scores_pred,
             }
         else:
-            x_seg, x_est = self.model.forward_encoder(spectrogram)
+            x_seg, x_est = self.model.forward_encoder(spectrogram, mask=t_mask)
             boundary_logits, seg_latent = self._forward_train_segmentation(
                 x_seg, language_ids=language_ids, boundaries=boundaries, mask=t_mask
             )
@@ -165,7 +165,7 @@ class MIDIExtractionModule(BaseLightningModule):
             }
 
     def _forward_infer_e2e(self, spectrogram, language_ids, mask):
-        x_seg, x_est = self.model.forward_encoder(spectrogram)
+        x_seg, x_est = self.model.forward_encoder(spectrogram, mask=mask)
         boundaries = self._forward_infer_segmentation(
             x_seg, language_ids=language_ids, mask=mask
         )

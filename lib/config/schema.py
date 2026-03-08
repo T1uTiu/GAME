@@ -340,6 +340,8 @@ class ValidationConfig(ConfigBaseModel):
 
     @property
     def d3pm_sample_ts_resolved(self):
+        if self.d3pm_sample_ts is not None:
+            return self.d3pm_sample_ts
         step = (1 - self.d3pm_sample_t0) / self.d3pm_sample_steps
         return [
             self.d3pm_sample_t0 + i * step

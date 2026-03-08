@@ -17,21 +17,6 @@ _OPT_KEY_EST_THRESHOLD = "est_threshold"
 
 
 # noinspection PyUnusedLocal
-def _validate_d3pm_ts(ctx, param, value) -> list[float] | None:
-    if value is None:
-        return None
-    try:
-        ts = [float(t.strip()) for t in value.split(",")]
-        if not ts:
-            raise ValueError("At least one T value must be provided.")
-        if any(t < 0 or t >= 1 for t in ts):
-            raise ValueError("All T values must be in the range (0, 1).")
-        return ts
-    except Exception as e:
-        raise click.BadParameter(f"Invalid T values: {e}")
-
-
-# noinspection PyUnusedLocal
 def _validate_exts(ctx, param, value) -> set[str]:
     try:
         exts = {"." + ext.strip().lower() for ext in value.split(",")}
@@ -179,7 +164,6 @@ def shared_options(func=None, *, defaults: dict[str, Any] = None):
         ),
         click.option(
             "--ts", "--seg-d3pm-ts", type=str, default=None, show_default=False,
-            callback=_validate_d3pm_ts,
             help=(
                 "Custom T values for D3PM sampling in segmentation model, separated by commas. "
                 "Overrides --t0 and --nsteps if provided."
@@ -416,8 +400,6 @@ def align(
         overwrite: bool,
         no_wb: bool,
 ):
-    if ts is None:
-        ts = _t0_nstep_to_ts(t0, nsteps)
     if len(paths) > 1:
         save_path = None
     if save_path is not None:
@@ -467,6 +449,8 @@ def align(
         model=model,
         dataset=dataset,
         config=ValidationConfig(
+            d3pm_sample_t0=t0,
+            d3pm_sample_steps=nsteps,
             d3pm_sample_ts=ts,
             boundary_decoding_threshold=seg_threshold,
             boundary_decoding_radius=round(seg_radius / model.timestep),

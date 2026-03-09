@@ -217,10 +217,7 @@ def shared_options(func=None, *, defaults: dict[str, Any] = None):
         exists=True, dir_okay=True, file_okay=True, readable=True, path_type=pathlib.Path
     ),
 )
-@shared_options(defaults={
-    _OPT_KEY_SEG_D3PM_T0: 0.0,
-    _OPT_KEY_SEG_D3PM_NSTEPS: 8,
-})
+@shared_options(defaults={})
 @click.option(
     "--input-formats", type=str, default="wav,flac,mp3,aac,ogg", show_default=True,
     callback=_validate_exts,
@@ -368,10 +365,7 @@ def extract(
     "paths", type=str, nargs=-1, metavar="PATH_OR_GLOB",
     callback=_validate_path_or_glob,
 )
-@shared_options(defaults={
-    _OPT_KEY_SEG_D3PM_T0: 0.5,
-    _OPT_KEY_SEG_D3PM_NSTEPS: 4,
-})
+@shared_options(defaults={})
 @click.option(
     "--save-path", type=click.Path(
         file_okay=True, dir_okay=False, writable=True, path_type=pathlib.Path

@@ -19,6 +19,9 @@ func LoadWAV(path string, targetSR int) ([]float32, error) {
 	if !dec.IsValidFile() {
 		return nil, fmt.Errorf("invalid or non-PCM WAV: %s", path)
 	}
+	if dec.WavAudioFormat != 1 {
+		return nil, fmt.Errorf("non-PCM WAV (format %d): %s", dec.WavAudioFormat, path)
+	}
 
 	buf, err := dec.FullPCMBuffer()
 	if err != nil { return nil, fmt.Errorf("decode %s: %w", path, err) }
@@ -30,18 +33,30 @@ func LoadWAV(path string, targetSR int) ([]float32, error) {
 	numCh  := buf.Format.NumChannels
 	nFrames := len(buf.Data) / numCh
 
-	// Determine bit depth scale factor
-	bitDepth := dec.BitDepth
-	scale := float32(1.0 / math.Pow(2, float64(bitDepth-1)))
-
-	// Mix down to mono
-	mono := make([]float32, nFrames)
-	for i := 0; i < nFrames; i++ {
-		var sum float32
-		for c := 0; c < numCh; c++ {
-			sum += float32(buf.Data[i*numCh+c]) * scale
+	// Mix down to mono, normalising to [-1, 1]
+	bitDepth := int(dec.BitDepth)
+	var mono []float32
+	if bitDepth == 8 {
+		// 8-bit PCM is unsigned: 0–255, center at 128
+		mono = make([]float32, nFrames)
+		for i := 0; i < nFrames; i++ {
+			var sum float32
+			for c := 0; c < numCh; c++ {
+				sum += (float32(buf.Data[i*numCh+c]) - 128.0) / 128.0
+			}
+			mono[i] = sum / float32(numCh)
 		}
-		mono[i] = sum / float32(numCh)
+	} else {
+		// 16-bit and higher: signed, center at 0
+		scale := float32(1.0 / math.Pow(2, float64(bitDepth-1)))
+		mono = make([]float32, nFrames)
+		for i := 0; i < nFrames; i++ {
+			var sum float32
+			for c := 0; c < numCh; c++ {
+				sum += float32(buf.Data[i*numCh+c]) * scale
+			}
+			mono[i] = sum / float32(numCh)
+		}
 	}
 
 	if srcSR == targetSR {

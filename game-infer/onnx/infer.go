@@ -207,7 +207,7 @@ func runSegmenterOnce(
 		return nil
 	}
 	addScalarF32 := func(v float32) error {
-		t, e := ort.NewTensor(ort.NewShape(), []float32{v})
+		t, e := ort.NewScalar(v)
 		if e != nil {
 			return e
 		}
@@ -216,7 +216,7 @@ func runSegmenterOnce(
 		return nil
 	}
 	addScalarI64 := func(v int64) error {
-		t, e := ort.NewTensor(ort.NewShape(), []int64{v})
+		t, e := ort.NewScalar(v)
 		if e != nil {
 			return e
 		}
@@ -334,7 +334,7 @@ func runEstimator(sess *Sessions, xEst []float32, boundaries, maskT, maskN []boo
 	}
 	defer mNT.Destroy()
 
-	thrT, err := ort.NewTensor(ort.NewShape(), []float32{threshold})
+	thrT, err := ort.NewScalar(threshold)
 	if err != nil {
 		return nil, nil, err
 	}

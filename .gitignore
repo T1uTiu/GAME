@@ -15,3 +15,4 @@ venv
 
 .vscode
 .ipynb_checkpoints/
+game-infer/libonnxruntime.dylib

@@ -247,6 +247,103 @@ You can find a `summary.json` in the output directory containing all metric valu
 python evaluate.py --help
 ```
 
+## Go CLI (game-infer)
+
+`game-infer` is a self-contained Go binary that runs the ONNX inference pipeline without any Python or CUDA environment. It supports the same `extract` and `align` subcommands as the Python script.
+
+### Prerequisites
+
+Download the ONNX model package from [releases](https://github.com/openvpi/GAME/releases) (e.g. `GAME-1.0.3-small-onnx.zip`) and extract it to a local directory.
+
+The binary requires `libonnxruntime` (≥ 1.24.1) to be placed alongside the executable at runtime:
+
+| Platform | Library file |
+|---|---|
+| macOS (arm64 / x86_64) | `libonnxruntime.dylib` |
+| Windows (x86_64) | `onnxruntime.dll` |
+
+You can download the matching library from the [ORT GitHub releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.24.1).
+
+### Build from source
+
+Requires **Go 1.22+** and a C compiler (Xcode CLT on macOS, MSVC or MinGW on Windows).
+
+```bash
+cd game-infer
+
+# macOS — point CGo at the local ORT dylib
+CGO_LDFLAGS="-L$(pwd)" go build -o dist/game-infer .
+
+# Windows (PowerShell) — place onnxruntime.dll in game-infer/ first
+$env:CGO_LDFLAGS="-L."
+go build -o dist\game-infer.exe .
+```
+
+Copy the ORT library into `dist/` alongside the binary before distributing:
+
+```bash
+cp libonnxruntime.dylib dist/   # macOS
+# copy onnxruntime.dll dist\    # Windows
+```
+
+### Run
+
+**Transcribe a single audio file:**
+
+```bash
+./game-infer extract audio.wav -d /path/to/GAME-1.0.3-small-onnx
+```
+
+By default the MIDI file is saved next to the input audio. Use `--output-dir` to redirect output and `--output-formats` to choose formats:
+
+```bash
+./game-infer extract audio.wav \
+    -d /path/to/GAME-1.0.3-small-onnx \
+    --output-dir ./results \
+    --output-formats mid,txt,csv
+```
+
+**Transcribe all WAV files in a directory:**
+
+```bash
+./game-infer extract /path/to/audio/ \
+    -d /path/to/GAME-1.0.3-small-onnx \
+    --glob "*.wav"
+```
+
+**Align notes to labeled phoneme boundaries (DiffSinger dataset format):**
+
+```bash
+./game-infer align transcriptions.csv \
+    -d /path/to/GAME-1.0.3-small-onnx \
+    --save-path transcriptions-midi.csv
+```
+
+**Key flags (shared by both subcommands):**
+
+| Flag | Default | Description |
+|---|---|---|
+| `-d, --onnx-dir` | *(required)* | Path to the ONNX model directory |
+| `--device` | `cpu` | Execution provider: `cpu`, `coreml`, `cuda` |
+| `--language` | | Language hint: `zh`, `en`, `ja`, `yue` |
+| `--seg-threshold` | `0.2` | Boundary decoding threshold |
+| `--est-threshold` | `0.2` | Note presence threshold |
+| `--nsteps` | `8` | D3PM diffusion steps (more = slower but often better) |
+| `--output-formats` | `mid` | Comma-separated: `mid`, `txt`, `csv` |
+| `--tempo` | `120` | MIDI BPM |
+
+Run `./game-infer extract --help` or `./game-infer align --help` for the full option list.
+
+### Run tests
+
+```bash
+cd game-infer
+# Place libonnxruntime.dylib (macOS) in game-infer/ before running
+CGO_LDFLAGS="-L$(pwd)" go test ./... -timeout 300s
+```
+
+---
+
 ## Deployment
 
 Models can be exported to ONNX format for further deployment.

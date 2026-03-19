@@ -125,7 +125,10 @@ func buildOptions(device string) (*ort.SessionOptions, error) {
 			return nil, fmt.Errorf("coreml EP: %w", err)
 		}
 	case "cuda":
-		cudaOpts, _ := ort.NewCUDAProviderOptions()
+		cudaOpts, err := ort.NewCUDAProviderOptions()
+		if err != nil {
+			return nil, fmt.Errorf("cuda provider options: %w", err)
+		}
 		if err := opts.AppendExecutionProviderCUDA(cudaOpts); err != nil {
 			return nil, fmt.Errorf("cuda EP: %w", err)
 		}

@@ -100,14 +100,14 @@ func runAlign(_ *cobra.Command, args []string) error {
 	}
 
 	for _, indexPath := range inputPaths {
-		if err := processAlignIndex(indexPath, sess, params, uvVocab, inputPaths); err != nil {
+		if err := processAlignIndex(indexPath, sess, params, uvVocab, inputPaths, alignUVNoteCond); err != nil {
 			fmt.Fprintf(os.Stderr, "[WARN] %s: %v\n", indexPath, err)
 		}
 	}
 	return nil
 }
 
-func processAlignIndex(indexPath string, sess *onnx.Sessions, params onnx.InferParams, uvVocab map[string]bool, allPaths []string) error {
+func processAlignIndex(indexPath string, sess *onnx.Sessions, params onnx.InferParams, uvVocab map[string]bool, allPaths []string, uvNoteCond string) error {
 	f, err := os.Open(indexPath)
 	if err != nil { return err }
 	r := csv.NewReader(f)
@@ -128,6 +128,27 @@ func processAlignIndex(indexPath string, sess *onnx.Sessions, params onnx.InferP
 	if nameCol < 0 { return fmt.Errorf("missing 'name' column in %s", indexPath) }
 
 	wavDir := filepath.Join(filepath.Dir(indexPath), "wavs")
+
+	noteSeqCol := colIdx("note_seq")
+	noteDurCol := colIdx("note_dur")
+
+	// If output columns are missing, append them to the header and extend all data rows.
+	if noteSeqCol < 0 {
+		noteSeqCol = len(header)
+		header = append(header, "note_seq")
+		records[0] = header
+		for i := 1; i < len(records); i++ {
+			records[i] = append(records[i], "")
+		}
+	}
+	if noteDurCol < 0 {
+		noteDurCol = len(header)
+		header = append(header, "note_dur")
+		records[0] = header
+		for i := 1; i < len(records); i++ {
+			records[i] = append(records[i], "")
+		}
+	}
 
 	for ri, row := range records[1:] {
 		name := row[nameCol]
@@ -163,18 +184,27 @@ func processAlignIndex(indexPath string, sess *onnx.Sessions, params onnx.InferP
 		notes := output.MergeAndSortNotes(results[0])
 
 		// Build note_seq, note_dur
+		// uv-note-cond=predict: use model output directly
+		// uv-note-cond=follow: TODO: requires word-note alignment (align_notes_to_words)
 		var noteSeq []string
 		var noteDur []string
 		for _, n := range notes {
-			noteSeq = append(noteSeq, midiutil.MIDIToNoteNameCents(n.Pitch))
+			var pitchName string
+			if uvNoteCond == "follow" {
+				// follow: would mark notes for unvoiced words as "rest"
+				// Requires word-note alignment which is not yet implemented.
+				pitchName = midiutil.MIDIToNoteNameCents(n.Pitch)
+			} else {
+				// predict: use model output directly
+				pitchName = midiutil.MIDIToNoteNameCents(n.Pitch)
+			}
+			noteSeq = append(noteSeq, pitchName)
 			noteDur = append(noteDur, fmt.Sprintf("%.3f", n.Offset-n.Onset))
 		}
 
 		// Write back to record
-		noteSeqCol := colIdx("note_seq")
-		noteDurCol := colIdx("note_dur")
-		if noteSeqCol >= 0 { records[ri+1][noteSeqCol] = strings.Join(noteSeq, " ") }
-		if noteDurCol >= 0 { records[ri+1][noteDurCol] = strings.Join(noteDur, " ") }
+		records[ri+1][noteSeqCol] = strings.Join(noteSeq, " ")
+		records[ri+1][noteDurCol] = strings.Join(noteDur, " ")
 	}
 
 	// Determine output path

@@ -62,8 +62,8 @@ func runExtract(_ *cobra.Command, args []string) error {
 
 	outDir := extractOutputDir
 	if outDir == "" {
-		info, _ := os.Stat(inputPath)
-		if info.IsDir() { outDir = inputPath } else { outDir = filepath.Dir(inputPath) }
+		info, err := os.Stat(inputPath)
+		if err == nil && info.IsDir() { outDir = inputPath } else { outDir = filepath.Dir(inputPath) }
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil { return err }
 
@@ -143,11 +143,15 @@ func runExtract(_ *cobra.Command, args []string) error {
 		}
 		if formats["txt"] {
 			p := filepath.Join(outDir, stem+".txt")
-			_ = output.WriteTXT(allNotes, p, extractPitchFormat, extractRoundPitch)
+			if err := output.WriteTXT(allNotes, p, extractPitchFormat, extractRoundPitch); err != nil {
+				fmt.Fprintf(os.Stderr, "  [WARN] txt write: %v\n", err)
+			}
 		}
 		if formats["csv"] {
 			p := filepath.Join(outDir, stem+".csv")
-			_ = output.WriteCSV(allNotes, p, extractPitchFormat, extractRoundPitch)
+			if err := output.WriteCSV(allNotes, p, extractPitchFormat, extractRoundPitch); err != nil {
+				fmt.Fprintf(os.Stderr, "  [WARN] csv write: %v\n", err)
+			}
 		}
 		fmt.Printf("  chunks=%d  notes=%d\n", len(chunks), len(allNotes))
 	}
@@ -191,6 +195,7 @@ func collectFiles(root string, exts map[string]bool, glob string) (map[string]st
 		m[rel] = p
 		return nil
 	})
+	if err != nil { return nil, fmt.Errorf("walk %s: %w", root, err) }
 	if len(m) == 0 { return nil, fmt.Errorf("no audio files found in %s", root) }
-	return m, err
+	return m, nil
 }
